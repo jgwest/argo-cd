@@ -1,10 +1,11 @@
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata:
   name: argocd-application-controller
 spec:
   template:
     spec:
+      replicas: 2
       containers:
       - name: argocd-application-controller
         command:
@@ -15,3 +16,5 @@ spec:
         - "10"
         - --redis
         - "argocd-redis-ha-haproxy:6379"
+        - --replicas
+        - "2"

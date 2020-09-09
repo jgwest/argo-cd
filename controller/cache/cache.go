@@ -63,7 +63,8 @@ func NewLiveStateCache(
 	settingsMgr *settings.SettingsManager,
 	kubectl kube.Kubectl,
 	metricsServer *metrics.MetricsServer,
-	onObjectUpdated ObjectUpdatedHandler) LiveStateCache {
+	onObjectUpdated ObjectUpdatedHandler,
+	clusterFilter func(cluster *appv1.Cluster) bool) LiveStateCache {
 
 	return &liveStateCache{
 		appInformer:     appInformer,
@@ -73,6 +74,7 @@ func NewLiveStateCache(
 		kubectl:         kubectl,
 		settingsMgr:     settingsMgr,
 		metricsServer:   metricsServer,
+		clusterFilter:   clusterFilter,
 	}
 }
 
@@ -88,6 +90,7 @@ type liveStateCache struct {
 	kubectl         kube.Kubectl
 	settingsMgr     *settings.SettingsManager
 	metricsServer   *metrics.MetricsServer
+	clusterFilter   func(cluster *appv1.Cluster) bool
 
 	clusters      map[string]clustercache.ClusterCache
 	cacheSettings cacheSettings
@@ -427,7 +430,19 @@ func (c *liveStateCache) Run(ctx context.Context) error {
 	return nil
 }
 
+func (c *liveStateCache) canHandleCluster(cluster *appv1.Cluster) bool {
+	if c.clusterFilter == nil {
+		return true
+	}
+	return c.clusterFilter(cluster)
+}
+
 func (c *liveStateCache) handleAddEvent(cluster *appv1.Cluster) {
+	if !c.canHandleCluster(cluster) {
+		log.Infof("Ignoring cluster %s", cluster.Server)
+		return
+	}
+
 	c.lock.Lock()
 	_, ok := c.clusters[cluster.Server]
 	c.lock.Unlock()
@@ -446,6 +461,14 @@ func (c *liveStateCache) handleModEvent(oldCluster *appv1.Cluster, newCluster *a
 	cluster, ok := c.clusters[newCluster.Server]
 	c.lock.Unlock()
 	if ok {
+		if !c.canHandleCluster(newCluster) {
+			cluster.Invalidate()
+			c.lock.Lock()
+			delete(c.clusters, newCluster.Server)
+			c.lock.Unlock()
+			return
+		}
+
 		var updateSettings []clustercache.UpdateSettingsFunc
 		if !reflect.DeepEqual(oldCluster.Config, newCluster.Config) {
 			updateSettings = append(updateSettings, clustercache.SetConfig(newCluster.RESTConfig()))

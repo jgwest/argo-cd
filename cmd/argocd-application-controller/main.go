@@ -24,6 +24,7 @@ import (
 
 	"github.com/argoproj/argo-cd/common"
 	"github.com/argoproj/argo-cd/controller"
+	"github.com/argoproj/argo-cd/controller/sharding"
 	"github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
 	appclientset "github.com/argoproj/argo-cd/pkg/client/clientset/versioned"
 	"github.com/argoproj/argo-cd/reposerver/apiclient"
@@ -56,6 +57,8 @@ func newCommand() *cobra.Command {
 		kubectlParallelismLimit  int64
 		cacheSrc                 func() (*appstatecache.Cache, error)
 		redisClient              *redis.Client
+		replicas                 int
+		shard                    int
 	)
 	var command = cobra.Command{
 		Use:   cliName,
@@ -85,6 +88,17 @@ func newCommand() *cobra.Command {
 
 			settingsMgr := settings.NewSettingsManager(ctx, kubeClient, namespace)
 			kubectl := &kube.KubectlCmd{}
+			var clusterFilter func(cluster *v1alpha1.Cluster) bool
+			if replicas > 1 {
+				if shard < 0 {
+					shard, err = sharding.InferShard()
+					errors.CheckError(err)
+				}
+				log.Infof("Processing clusters from shard %d", shard)
+				clusterFilter = sharding.GetClusterFilter(replicas, shard)
+			} else {
+				log.Info("Processing all cluster shards")
+			}
 			appController, err := controller.NewApplicationController(
 				namespace,
 				settingsMgr,
@@ -96,7 +110,8 @@ func newCommand() *cobra.Command {
 				resyncDuration,
 				time.Duration(selfHealTimeoutSeconds)*time.Second,
 				metricsPort,
-				kubectlParallelismLimit)
+				kubectlParallelismLimit,
+				clusterFilter)
 			errors.CheckError(err)
 			cacheutil.CollectMetrics(redisClient, appController.GetMetricsServer())
 
@@ -125,6 +140,8 @@ func newCommand() *cobra.Command {
 	command.Flags().IntVar(&metricsPort, "metrics-port", common.DefaultPortArgoCDMetrics, "Start metrics server on given port")
 	command.Flags().IntVar(&selfHealTimeoutSeconds, "self-heal-timeout-seconds", 5, "Specifies timeout between application self heal attempts")
 	command.Flags().Int64Var(&kubectlParallelismLimit, "kubectl-parallelism-limit", 20, "Number of allowed concurrent kubectl fork/execs. Any value less the 1 means no limit.")
+	command.Flags().IntVar(&replicas, "replicas", 1, "Total number of controller replicas")
+	command.Flags().IntVar(&shard, "shard", -1, "The shard number of clusters that are handled by controller (inferred from hostname if not set)")
 	cacheSrc = appstatecache.AddCacheFlagsToCmd(&command, func(client *redis.Client) {
 		redisClient = client
 	})

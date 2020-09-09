@@ -327,5 +327,5 @@ func reconcileApplications(
 }
 
 func newLiveStateCache(argoDB db.ArgoDB, appInformer kubecache.SharedIndexInformer, settingsMgr *settings.SettingsManager, server *metrics.MetricsServer) cache.LiveStateCache {
-	return cache.NewLiveStateCache(argoDB, appInformer, settingsMgr, &kube.KubectlCmd{}, server, func(managedByApp map[string]bool, ref apiv1.ObjectReference) {})
+	return cache.NewLiveStateCache(argoDB, appInformer, settingsMgr, &kube.KubectlCmd{}, server, func(managedByApp map[string]bool, ref apiv1.ObjectReference) {}, nil)
 }
