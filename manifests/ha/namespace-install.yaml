@@ -2936,8 +2936,6 @@ spec:
         - "10"
         - --redis
         - argocd-redis-ha-haproxy:6379
-        - --replicas
-        - "2"
         image: argoproj/argocd:latest
         imagePullPolicy: Always
         livenessProbe:
@@ -2955,7 +2953,6 @@ spec:
             port: 8082
           initialDelaySeconds: 5
           periodSeconds: 10
-      replicas: 2
       serviceAccountName: argocd-application-controller
 ---
 apiVersion: apps/v1
