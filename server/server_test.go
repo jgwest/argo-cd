@@ -16,11 +16,7 @@ import (
 
 	"github.com/argoproj/argo-cd/common"
 	"github.com/argoproj/argo-cd/pkg/apiclient"
-<<<<<<< Updated upstream
-	applicationpkg "github.com/argoproj/argo-cd/pkg/apiclient/application"
 	"github.com/argoproj/argo-cd/pkg/apiclient/session"
-=======
->>>>>>> Stashed changes
 	"github.com/argoproj/argo-cd/pkg/apis/application/v1alpha1"
 	apps "github.com/argoproj/argo-cd/pkg/client/clientset/versioned/fake"
 	servercache "github.com/argoproj/argo-cd/server/cache"
