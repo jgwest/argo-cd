@@ -11,10 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"github.com/argoproj/argo-cd/common"
 	"github.com/argoproj/argo-cd/pkg/apiclient"
 	"github.com/argoproj/argo-cd/test"
-	"github.com/stretchr/testify/assert"
 
 	applicationpkg "github.com/argoproj/argo-cd/pkg/apiclient/application"
 )
