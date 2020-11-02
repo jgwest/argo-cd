@@ -2,6 +2,7 @@ name: Integration tests
 on: 
   push:
     branches:
+      - 'test-race-ci-build'
       - 'master'
       - 'release-*'
       - '!release-1.4'
