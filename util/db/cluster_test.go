@@ -147,35 +147,6 @@ func TestWatchClusters_CreateRemoveCluster(t *testing.T) {
 	})
 }
 
-func TestWatchClusters_LocalClusterModifications(t *testing.T) {
-	kubeclientset := fake.NewSimpleClientset()
-	settingsManager := settings.NewSettingsManager(context.Background(), kubeclientset, fakeNamespace)
-	db := NewDB(fakeNamespace, settingsManager, kubeclientset)
-	runWatchTest(t, db, []func(old *v1alpha1.Cluster, new *v1alpha1.Cluster){
-		func(old *v1alpha1.Cluster, new *v1alpha1.Cluster) {
-			assert.Nil(t, old)
-			assert.Equal(t, new.Server, common.KubernetesInternalAPIServerAddr)
-
-			_, err := db.CreateCluster(context.Background(), &v1alpha1.Cluster{
-				Server: common.KubernetesInternalAPIServerAddr,
-				Name:   "some name",
-			})
-			assert.NoError(t, err)
-		},
-		func(old *v1alpha1.Cluster, new *v1alpha1.Cluster) {
-			assert.NotNil(t, old)
-			assert.Equal(t, new.Server, common.KubernetesInternalAPIServerAddr)
-			assert.Equal(t, new.Name, "some name")
-
-			assert.NoError(t, db.DeleteCluster(context.Background(), common.KubernetesInternalAPIServerAddr))
-		},
-		func(old *v1alpha1.Cluster, new *v1alpha1.Cluster) {
-			assert.Equal(t, new.Server, common.KubernetesInternalAPIServerAddr)
-			assert.Equal(t, new.Name, "in-cluster")
-		},
-	})
-}
-
 func runWatchTest(t *testing.T, db ArgoDB, actions []func(old *v1alpha1.Cluster, new *v1alpha1.Cluster)) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
