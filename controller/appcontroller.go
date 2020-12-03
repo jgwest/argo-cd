@@ -280,6 +280,28 @@ func (ctrl *ApplicationController) setAppManagedResources(a *appv1.Application, 
 	return tree, ctrl.cache.SetAppManagedResources(a.Name, managedResources)
 }
 
+// func (ctrl *ApplicationController) setAppManagedResources(a *appv1.Application, comparisonResult *comparisonResult) (*appv1.ApplicationTree, error) {
+
+// 	compareOptions, err := ctrl.settingsMgr.GetResourceCompareOptions()
+// 	if err != nil {
+// 		return nil, err
+// 	}
+
+// 	managedResources, err := ctrl.managedResources(comparisonResult, compareOptions)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	tree, err := ctrl.getResourceTree(a, managedResources)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	err = ctrl.cache.SetAppResourcesTree(a.Name, tree)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	return tree, ctrl.cache.SetAppManagedResources(a.Name, managedResources)
+// }
+
 // returns true of given resources exist in the namespace by default and not managed by the user
 func isKnownOrphanedResourceExclusion(key kube.ResourceKey, proj *appv1.AppProject) bool {
 	if key.Namespace == "default" && key.Group == "" && key.Kind == kube.ServiceKind && key.Name == "kubernetes" {
@@ -384,6 +406,7 @@ func (ctrl *ApplicationController) getResourceTree(a *appv1.Application, managed
 	return &appv1.ApplicationTree{Nodes: nodes, OrphanedNodes: orphanedNodes}, nil
 }
 
+// managedResources converts a comparison result to a resource diff
 func (ctrl *ApplicationController) managedResources(comparisonResult *comparisonResult) ([]*appv1.ResourceDiff, error) {
 	items := make([]*appv1.ResourceDiff, len(comparisonResult.managedResources))
 	for i := range comparisonResult.managedResources {
@@ -446,8 +469,67 @@ func (ctrl *ApplicationController) managedResources(comparisonResult *comparison
 	return items, nil
 }
 
+// func (ctrl *ApplicationController) managedResources(comparisonResult *comparisonResult, compareOptions settings.ArgoCDDiffOptions) ([]*appv1.ResourceDiff, error) {
+// 	items := make([]*appv1.ResourceDiff, len(comparisonResult.managedResources))
+// 	for i := range comparisonResult.managedResources {
+// 		res := comparisonResult.managedResources[i]
+// 		item := appv1.ResourceDiff{
+// 			Namespace: res.Namespace,
+// 			Name:      res.Name,
+// 			Group:     res.Group,
+// 			Kind:      res.Kind,
+// 			Hook:      res.Hook,
+// 		}
+
+// 		target := res.Target
+// 		live := res.Live
+// 		resDiff := res.Diff
+// 		if res.Kind == kube.SecretKind && res.Group == "" {
+// 			var err error
+// 			target, live, err = diff.HideSecretData(res.Target, res.Live)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			resDiffPtr, err := diff.Diff(target, live,
+// 				diff.WithNormalizer(comparisonResult.diffNormalizer),
+// 				diff.WithLogr(logutils.NewLogrusLogger(log.New())),
+// 				diff.IgnoreAggregatedRoles(compareOptions.IgnoreAggregatedRoles))
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			resDiff = *resDiffPtr
+// 		}
+
+// 		if live != nil {
+// 			data, err := json.Marshal(live)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			item.LiveState = string(data)
+// 		} else {
+// 			item.LiveState = "null"
+// 		}
+
+// 		if target != nil {
+// 			data, err := json.Marshal(target)
+// 			if err != nil {
+// 				return nil, err
+// 			}
+// 			item.TargetState = string(data)
+// 		} else {
+// 			item.TargetState = "null"
+// 		}
+// 		item.PredictedLiveState = string(resDiff.PredictedLive)
+// 		item.NormalizedLiveState = string(resDiff.NormalizedLive)
+
+// 		items[i] = &item
+// 	}
+// 	return items, nil
+// }
+
 // Run starts the Application CRD controller.
 func (ctrl *ApplicationController) Run(ctx context.Context, statusProcessors int, operationProcessors int) {
+
 	defer runtime.HandleCrash()
 	defer ctrl.appRefreshQueue.ShutDown()
 	defer ctrl.appComparisonTypeRefreshQueue.ShutDown()
@@ -508,9 +590,11 @@ func (ctrl *ApplicationController) requestAppRefresh(appName string, compareWith
 			ctrl.refreshRequestedAppsMutex.Unlock()
 		}
 		if after != nil {
+			fmt.Println("JGW - requestAppRefresh 1", key)
 			ctrl.appRefreshQueue.AddAfter(key, *after)
 			ctrl.appOperationQueue.AddAfter(key, *after)
 		} else {
+			fmt.Println("JGW - requestAppRefresh 2", key)
 			ctrl.appRefreshQueue.Add(key)
 			ctrl.appOperationQueue.Add(key)
 		}
@@ -529,6 +613,10 @@ func (ctrl *ApplicationController) isRefreshRequested(appName string) (bool, Com
 
 func (ctrl *ApplicationController) processAppOperationQueueItem() (processNext bool) {
 	appKey, shutdown := ctrl.appOperationQueue.Get()
+
+	// fmt.Println("jgw IN processAppOperationQueueItem", appKey)
+	// defer fmt.Println("jgw OUT processAppOperationQueueItem", appKey)
+
 	if shutdown {
 		processNext = false
 		return
@@ -806,6 +894,10 @@ func (ctrl *ApplicationController) setAppCondition(app *appv1.Application, condi
 }
 
 func (ctrl *ApplicationController) processRequestedAppOperation(app *appv1.Application) {
+
+	fmt.Println("jgw IN processRequestedAppOperation", app.Name)
+	defer fmt.Println("jgw OUT processRequestedAppOperation", app.Name)
+
 	logCtx := log.WithField("application", app.Name)
 	var state *appv1.OperationState
 	// Recover from any unexpected panics and automatically set the status to be failed
@@ -860,6 +952,7 @@ func (ctrl *ApplicationController) processRequestedAppOperation(app *appv1.Appli
 			logCtx.Infof("Resuming in-progress operation. phase: %s, message: %s", state.Phase, state.Message)
 		}
 	} else {
+		ctrl.appStateManager.SignalNewSyncOperation(app)
 		state = &appv1.OperationState{Phase: synccommon.OperationRunning, Operation: *app.Operation, StartedAt: metav1.Now()}
 		ctrl.setOperationState(app, state)
 		logCtx.Infof("Initialized new operation: %v", *app.Operation)
@@ -1427,6 +1520,7 @@ func (ctrl *ApplicationController) newApplicationInformerAndLister() (cache.Shar
 				if err == nil {
 					ctrl.appRefreshQueue.Add(key)
 					ctrl.appOperationQueue.Add(key)
+					// fmt.Println("JGW add func", key)
 				}
 			},
 			UpdateFunc: func(old, new interface{}) {
@@ -1445,6 +1539,7 @@ func (ctrl *ApplicationController) newApplicationInformerAndLister() (cache.Shar
 					log.WithField("application", newApp.Name).Info("Enabled automated sync")
 					compareWith = CompareWithLatest.Pointer()
 				}
+				// fmt.Println("JGW update func", key)
 				ctrl.requestAppRefresh(newApp.Name, compareWith, nil)
 				ctrl.appOperationQueue.Add(key)
 			},

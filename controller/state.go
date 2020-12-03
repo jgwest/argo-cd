@@ -73,6 +73,7 @@ func GetLiveObjsForApplicationHealth(resources []managedResource, statuses []app
 type AppStateManager interface {
 	CompareAppState(app *v1alpha1.Application, project *appv1.AppProject, revision string, source v1alpha1.ApplicationSource, noCache bool, localObjects []string) *comparisonResult
 	SyncAppState(app *v1alpha1.Application, state *v1alpha1.OperationState)
+	SignalNewSyncOperation(app *v1alpha1.Application)
 }
 
 type comparisonResult struct {
@@ -106,6 +107,9 @@ type appStateManager struct {
 	repoClientset  apiclient.Clientset
 	liveStateCache statecache.LiveStateCache
 	namespace      string
+
+	// TODO: session is perhaps the wrong name, too related to webpage/cookie sessions
+	sessionCache *sessionCache
 }
 
 func (m *appStateManager) getRepoObjs(app *v1alpha1.Application, source v1alpha1.ApplicationSource, appLabelKey, revision string, noCache, verifySignature bool) ([]*unstructured.Unstructured, *apiclient.ManifestResponse, error) {
@@ -596,6 +600,14 @@ func (m *appStateManager) persistRevisionHistory(app *v1alpha1.Application, revi
 	return err
 }
 
+func (m *appStateManager) SignalNewSyncOperation(app *v1alpha1.Application) {
+	if app == nil || m.sessionCache == nil {
+		return
+	}
+	// Clear the event log
+	m.sessionCache.getOrCreate(app.UID).eventLog = nil
+}
+
 // NewAppStateManager creates new instance of AppStateManager
 func NewAppStateManager(
 	db db.ArgoDB,
@@ -618,5 +630,6 @@ func NewAppStateManager(
 		settingsMgr:    settingsMgr,
 		projInformer:   projInformer,
 		metricsServer:  metricsServer,
+		sessionCache:   newSessionCache(),
 	}
 }

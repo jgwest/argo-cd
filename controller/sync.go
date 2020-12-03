@@ -34,6 +34,160 @@ const (
 	EnvVarSyncWaveDelay = "ARGOCD_SYNC_WAVE_DELAY"
 )
 
+var jgwRemoveMe_nextInstanceId = 1
+
+type syncContextEventLog struct {
+	syncStartTime *time.Time
+	appName       string
+	oldWave       *int
+	oldPhase      common.SyncPhase
+	instanceId    int
+}
+
+func (t *syncContextEventLog) out(str ...interface{}) {
+
+	currTime := ""
+
+	if t.syncStartTime != nil {
+
+		diff := time.Now().Sub(*t.syncStartTime)
+		msecs := diff.Milliseconds()
+		secs := diff.Seconds()
+
+		currTime = fmt.Sprintf("%d.%03d", int64(secs), int32(msecs%1000))
+	}
+
+	outStr := fmt.Sprintln(str...)
+	fmt.Printf("(%s)  [%v]  %v\n", currTime, t.appName, outStr)
+}
+
+func (t *syncContextEventLog) ActiveTasksInPhaseWave(phase common.SyncPhase, wave int) {
+
+	if t.syncStartTime == nil {
+		now := time.Now()
+		t.syncStartTime = &now
+	}
+
+	// TODO: unit test this
+
+	t.out("StartPhaseWave", phase, wave)
+
+	// If:
+	// - this oldPhase is empty because this is the first phase to run
+	// - or, the phase has changed from last report
+	if t.oldPhase == "" || phase != t.oldPhase {
+
+		// If both the phase and wave were previously reported, and they don't match...
+		if t.oldPhase != "" && t.oldWave != nil {
+			// ... this implies a previous phase/wave ended
+			t.PhaseWaveComplete(phase, wave, false)
+		}
+
+		// Report new phase
+		t.out("🌙 Beginning phase", phase)
+	}
+
+	// If:
+	// - we have not previously reported any waves as beginning
+	// - or, the wave has changed
+	// - or, the phase has changed
+	if t.oldWave == nil || (wave != *t.oldWave) || phase != t.oldPhase {
+		// ...then report a new wave
+		t.out("🌊 Beginning wave", wave)
+	}
+
+	t.oldPhase = phase
+	t.oldWave = &wave
+
+}
+
+func (t *syncContextEventLog) PhaseWaveComplete(newPhase common.SyncPhase, newWave int, final bool) {
+	t.out("PhaseWaveComplete", newPhase, newWave, final)
+
+	// TODO: unit test this
+
+	// Report wave end iff:
+	// - we have not previously reported a wave start
+	// - or this is the final expected wave state change
+	// - or the wave value has changed from the last reported value
+	// - or the phase changed (implying the wave also ended)
+	if final == true || t.oldWave == nil || *t.oldWave != newWave || t.oldPhase != newPhase {
+		oldWave := ""
+		if t.oldWave != nil {
+			oldWave = fmt.Sprintf("%d", *t.oldWave)
+		}
+		t.out("🌊 Ending wave", oldWave)
+	}
+
+	// Report phase end iff:
+	// - we have not previously reported a phase end
+	// - or this is the final expected phase state change
+	// - or the phase value has changed from the last reported value
+	if final == true || (t.oldPhase != "" && t.oldPhase != newPhase) {
+		t.out("🌙 Ending phase", t.oldPhase)
+	}
+
+}
+
+func formatK8sResource(resource sync.ActionKubernetesResource) string {
+	return fmt.Sprintf("'%s' (%s) %s", resource.Name, resource.Kind, resource.UID)
+}
+
+func (t *syncContextEventLog) ApplyResource(resource sync.ActionKubernetesResource) {
+	t.out("Applying resource", formatK8sResource(resource))
+}
+func (t *syncContextEventLog) DeleteResource(resource sync.ActionKubernetesResource) {
+	t.out("Deleting resource", formatK8sResource(resource))
+}
+
+func (t *syncContextEventLog) CreateTask(cdResource sync.ActionCDResource, k8sResource sync.ActionKubernetesResource) {
+
+	if cdResource.HookType != "" {
+		// Hook
+		t.out(fmt.Sprintf("Creating Hook %s🪝 - %s", cdResource.HookType, formatK8sResource(k8sResource)))
+
+	} else {
+		// !Hook
+		t.out(fmt.Sprintf("Creating %s", formatK8sResource(k8sResource)))
+	}
+
+}
+func (t *syncContextEventLog) PruneTask(cdResource sync.ActionCDResource, k8sResource sync.ActionKubernetesResource) {
+
+	if cdResource.HookType != "" {
+		// Hook
+		t.out(fmt.Sprintf("Pruning Hook %s🪝 - %s", cdResource.HookType, formatK8sResource(k8sResource)))
+
+	} else {
+
+		// !Hook
+		t.out(fmt.Sprintf("Pruning %s", formatK8sResource(k8sResource)))
+	}
+
+}
+func (t *syncContextEventLog) DeleteHook(cdResource sync.ActionCDResource, k8sResource sync.ActionKubernetesResource) {
+
+	// Hook
+	t.out(fmt.Sprintf("Deleting Hook %s🪝 - %s", cdResource.HookType, formatK8sResource(k8sResource)))
+}
+
+// func (t *syncContextEventLog) DeleteResource(name string, kind string, uid string) {
+// 	t.out("Deleting resource", fmt.Sprintf("'%s' (%s) %s", name, kind, uid))
+// }
+
+// func (t *syncContextEventLog) ApplyResource(name string, kind string, uid string) {
+// 	t.out("Applying resource", fmt.Sprintf("'%s' (%s) %s", name, kind, uid))
+// }
+
+type hi struct {
+	name      string
+	kind      string
+	uid       string
+	namespace string
+}
+
+var _ sync.SyncContextEventLog = &syncContextEventLog{}
+
 func (m *appStateManager) SyncAppState(app *v1alpha1.Application, state *v1alpha1.OperationState) {
 	// Sync requests might be requested with ambiguous revisions (e.g. master, HEAD, v1.2.3).
 	// This can change meaning when resuming operations (e.g a hook sync). After calculating a
@@ -135,6 +289,24 @@ func (m *appStateManager) SyncAppState(app *v1alpha1.Application, state *v1alpha
 			Order:       i + 1,
 		})
 	}
+
+	appEntry := m.sessionCache.getOrCreate(app.UID)
+
+	if appEntry.eventLog == nil {
+
+		var eventContextLog *syncContextEventLog = &syncContextEventLog{
+			appName:    app.Name,
+			instanceId: jgwRemoveMe_nextInstanceId,
+		}
+		jgwRemoveMe_nextInstanceId++
+
+		appEntry.eventLog = eventContextLog
+
+	}
+
+	// fmt.Println("jgw IN SyncAppState", appEntry.eventLog.instanceId)
+	// defer fmt.Println("jgw OUT SyncAppState", appEntry.eventLog.instanceId)
+
 	syncCtx, err := sync.NewSyncContext(
 		compareResult.syncStatus.Revision,
 		compareResult.reconciliationResult,
@@ -142,6 +314,7 @@ func (m *appStateManager) SyncAppState(app *v1alpha1.Application, state *v1alpha
 		rawConfig,
 		m.kubectl,
 		app.Spec.Destination.Namespace,
+		appEntry.eventLog,
 		sync.WithLogr(logutils.NewLogrusLogger(logEntry)),
 		sync.WithHealthOverride(lua.ResourceHealthOverrides(resourceOverrides)),
 		sync.WithPermissionValidator(func(un *unstructured.Unstructured, res *v1.APIResource) error {
@@ -177,6 +350,7 @@ func (m *appStateManager) SyncAppState(app *v1alpha1.Application, state *v1alpha
 	start := time.Now()
 
 	if state.Phase == common.OperationTerminating {
+		fmt.Println("Terminate called from controller/sync.go")
 		syncCtx.Terminate()
 	} else {
 		syncCtx.Sync()

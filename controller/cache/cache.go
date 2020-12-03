@@ -31,13 +31,13 @@ import (
 type LiveStateCache interface {
 	// Returns k8s server version
 	GetVersionsInfo(serverURL string) (string, []metav1.APIGroup, error)
-	// Returns true of given group kind is a namespaced resource
+	// Returns true if given group kind is a namespaced resource
 	IsNamespaced(server string, gk schema.GroupKind) (bool, error)
 	// Returns synced cluster cache
 	GetClusterCache(server string) (clustercache.ClusterCache, error)
-	// Executes give callback against resource specified by the key and all its children
+	// Executes given callback against resource specified by the key and all its children
 	IterateHierarchy(server string, key kube.ResourceKey, action func(child appv1.ResourceNode, appName string)) error
-	// Returns state of live nodes which correspond for target nodes of specified application.
+	// Returns state of live nodes which correspond to target nodes of specified application.
 	GetManagedLiveObjs(a *appv1.Application, targetObjs []*unstructured.Unstructured) (map[kube.ResourceKey]*unstructured.Unstructured, error)
 	// Returns all top level resources (resources without owner references) of a specified namespace
 	GetNamespaceTopLevelResources(server string, namespace string) (map[kube.ResourceKey]appv1.ResourceNode, error)
@@ -101,7 +101,9 @@ type liveStateCache struct {
 	// k8s list queries results across all clusters to avoid memory spikes during cache initialization.
 	listSemaphore *semaphore.Weighted
 
-	clusters      map[string]clustercache.ClusterCache
+	// map key is server URL
+	clusters map[string]clustercache.ClusterCache
+
 	cacheSettings cacheSettings
 	lock          sync.RWMutex
 }
@@ -126,6 +128,7 @@ func (c *liveStateCache) loadCacheSettings() (*cacheSettings, error) {
 	return &cacheSettings{clusterSettings, appInstanceLabelKey}, nil
 }
 
+// asResourceNode converts a gitops-engine Resource to a ResourceNode
 func asResourceNode(r *clustercache.Resource) appv1.ResourceNode {
 	gv, err := schema.ParseGroupVersion(r.Ref.APIVersion)
 	if err != nil {
@@ -173,6 +176,7 @@ func isRootAppNode(r *clustercache.Resource) bool {
 	return resInfo(r).AppName != "" && len(r.OwnerRefs) == 0
 }
 
+// getApp scans the Resource to locate the AppName, or "" if not found
 func getApp(r *clustercache.Resource, ns map[kube.ResourceKey]*clustercache.Resource) string {
 	return getAppRecursive(r, ns, map[kube.ResourceKey]bool{})
 }
@@ -185,6 +189,7 @@ func ownerRefGV(ownerRef metav1.OwnerReference) schema.GroupVersion {
 	return gv
 }
 
+// getAppRecursive recursively scans the Resource to locate the AppName, or "" if not found (and tolerates circular references)
 func getAppRecursive(r *clustercache.Resource, ns map[kube.ResourceKey]*clustercache.Resource, visited map[kube.ResourceKey]bool) string {
 	if !visited[r.ResourceKey()] {
 		visited[r.ResourceKey()] = true
@@ -280,6 +285,7 @@ func (c *liveStateCache) getCluster(server string) (clustercache.ClusterCache, e
 			if r == nil {
 				continue
 			}
+			// Retrieve the app name by scanning owner references, beginning at r
 			app := getApp(r, namespaceResources)
 			if app == "" || skipAppRequeuing(r.ResourceKey()) {
 				continue
