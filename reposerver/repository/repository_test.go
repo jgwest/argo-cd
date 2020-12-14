@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -905,6 +906,45 @@ func TestListApps(t *testing.T) {
 		"my-chart-2":         "Helm",
 	}
 	assert.Equal(t, expectedApps, res.Apps)
+}
+
+func TestListPaths(t *testing.T) {
+	service := newService("./testdata")
+
+	res, err := service.ListPaths(context.Background(), &apiclient.ListPathsRequest{Repo: &argoappv1.Repository{}})
+	assert.NoError(t, err)
+
+	sort.Strings(res.Paths)
+
+	// Walk the ./testdata directory and return discovered files
+	getFileListFunc := func(root string) ([]string, error) {
+		result := []string{}
+
+		err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+
+			// Skip directories
+			if info.IsDir() {
+				return nil
+			}
+
+			dir, err := filepath.Rel(root, filepath.Dir(path))
+			if err != nil {
+				return err
+			}
+
+			result = append(result, dir)
+			return nil
+		})
+		return result, err
+	}
+	result, err := getFileListFunc("./testdata")
+	assert.NoError(t, err)
+
+	sort.Strings(result)
+	assert.Equal(t, result, res.Paths)
 }
 
 func TestGetAppDetailsHelm(t *testing.T) {

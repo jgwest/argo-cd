@@ -69,6 +69,20 @@ func (c *Cache) SetApps(repoUrl, revision string, apps map[string]string) error 
 	return c.cache.SetItem(listApps(repoUrl, revision), apps, c.repoCacheExpiration, apps == nil)
 }
 
+func listPaths(repoURL, revision string) string {
+	return fmt.Sprintf("path|%s|%s", repoURL, revision)
+}
+
+func (c *Cache) ListPaths(repoUrl, revision string) ([]string, error) {
+	res := []string{}
+	err := c.cache.GetItem(listPaths(repoUrl, revision), &res)
+	return res, err
+}
+
+func (c *Cache) SetPaths(repoUrl, revision string, paths []string) error {
+	return c.cache.SetItem(listPaths(repoUrl, revision), paths, c.repoCacheExpiration, paths == nil)
+}
+
 func manifestCacheKey(revision string, appSrc *appv1.ApplicationSource, namespace string, appLabelKey string, appLabelValue string) string {
 	return fmt.Sprintf("mfst|%s|%s|%s|%s|%d", appLabelKey, appLabelValue, revision, namespace, appSourceKey(appSrc))
 }

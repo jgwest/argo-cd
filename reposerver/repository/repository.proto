@@ -145,6 +145,16 @@ message HelmChartsResponse {
     repeated HelmChart items = 1;
 }
 
+message ListPathsRequest {
+    github.com.argoproj.argo_cd.pkg.apis.application.v1alpha1.Repository repo = 1;
+    string revision = 2;
+}
+
+message PathList {
+    repeated string paths = 1;
+}
+
+
 // ManifestService
 service RepoServerService {
 
@@ -170,5 +180,10 @@ service RepoServerService {
 
     // GetHelmCharts returns list of helm charts in the specified repository
     rpc GetHelmCharts(HelmChartsRequest) returns (HelmChartsResponse) {
+    }
+
+    // ListPath returns a list of all of the file paths within the repo
+    rpc ListPaths(ListPathsRequest) returns (PathList) {
+
     }
 }

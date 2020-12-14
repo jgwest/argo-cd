@@ -67,6 +67,29 @@ func TestCache_ListApps(t *testing.T) {
 	assert.Equal(t, map[string]string{"foo": "bar"}, value)
 }
 
+func TestCache_ListPaths(t *testing.T) {
+	cache := newFixtures().Cache
+	// cache miss
+	_, err := cache.ListPaths("my-repo-url", "my-revision")
+	assert.Equal(t, ErrCacheMiss, err)
+	// populate cache
+	err = cache.SetPaths("my-repo-url", "my-revision", []string{"foo", "bar"})
+	assert.NoError(t, err)
+
+	// cache miss
+	_, err = cache.ListPaths("other-repo-url", "my-revision")
+	assert.Equal(t, ErrCacheMiss, err)
+
+	// cache miss
+	_, err = cache.ListPaths("my-repo-url", "other-revision")
+	assert.Equal(t, ErrCacheMiss, err)
+
+	// cache hit
+	value, err := cache.ListPaths("my-repo-url", "my-revision")
+	assert.NoError(t, err)
+	assert.Equal(t, []string{"foo", "bar"}, value)
+}
+
 func TestCache_GetManifests(t *testing.T) {
 	cache := newFixtures().Cache
 	// cache miss

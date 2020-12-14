@@ -123,6 +123,71 @@ func (s *Service) ListRefs(ctx context.Context, q *apiclient.ListRefsRequest) (*
 	return &res, nil
 }
 
+// ListPaths returns a recursive list of all the files under a given repo, relative to root, utilizing a cached value
+// if available.
+func (s *Service) ListPaths(ctx context.Context, q *apiclient.ListPathsRequest) (*apiclient.PathList, error) {
+
+	gitClient, commitSHA, err := s.newClientResolveRevision(q.Repo, q.Revision)
+	if err != nil {
+		return nil, err
+	}
+	if paths, err := s.cache.ListPaths(q.Repo.Repo, commitSHA); err == nil {
+		log.Infof("list paths cache hit: %s/%s", q.Repo.Repo, q.Revision)
+		return &apiclient.PathList{Paths: paths}, nil
+	}
+
+	s.metricsServer.IncPendingRepoRequest(q.Repo.Repo)
+	defer s.metricsServer.DecPendingRepoRequest(q.Repo.Repo)
+
+	closer, err := s.repoLock.Lock(gitClient.Root(), commitSHA, true, func() error {
+		return checkoutRevision(gitClient, commitSHA)
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer io.Close(closer)
+
+	paths, err := walkPaths(gitClient.Root())
+	if err != nil {
+		return nil, err
+	}
+	err = s.cache.SetPaths(q.Repo.Repo, commitSHA, paths)
+	if err != nil {
+		log.Warnf("list paths cache set error %s/%s: %v", q.Repo.Repo, commitSHA, err)
+	}
+	res := apiclient.PathList{Paths: paths}
+	return &res, nil
+
+}
+
+// walkPaths returns a recursive list of all the files under root, relative to root
+func walkPaths(root string) ([]string, error) {
+	result := []string{}
+
+	err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Skip directories
+		if info.IsDir() {
+			return nil
+		}
+
+		dir, err := filepath.Rel(root, filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+
+		result = append(result, dir)
+
+		return nil
+	})
+	return result, err
+}
+
 // ListApps lists the contents of a GitHub repo
 func (s *Service) ListApps(ctx context.Context, q *apiclient.ListAppsRequest) (*apiclient.AppList, error) {
 	gitClient, commitSHA, err := s.newClientResolveRevision(q.Repo, q.Revision)
