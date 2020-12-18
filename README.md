@@ -1,3 +1,50 @@
+
+## Building and testing ubi-minimal Dockerfile
+
+<!-- Do not PR/merge the contents of this file -->
+
+
+### To build the Dockerfile.ubi-minimal image
+
+```
+docker login
+export IMAGE_USER=jgwest # replace with your docker hub username
+
+docker build -t ubi-minimal:latest -f ./Dockerfile.ubi-minimal .
+docker tag ubi-minimal:latest $IMAGE_USER/argocd:latest
+docker push $IMAGE_USER/argocd:latest
+```
+
+### To deploy the custom image
+
+```
+kubectl create namespace argocd
+kubectl config set-context --current --namespace=argocd
+
+# argoproj/argocd -> jgwest/argocd
+kustomize build manifests/cluster-install | sed 's/argoproj\/argocd/jgwest\/argocd/g' | kubectl apply -f -
+
+# Enable ingress at https://argocd.192.168.1.220.nip.io (for cluster IP address 192.168.1.220)
+# Edit the file to use your own cluster host IP
+kubectl apply -f argo-ingress.yaml 
+
+export IP_ADDRESS=192.168.1.220
+
+# Login and change password to 'password'
+dist/argocd login --insecure argocd."$IP_ADDRESS".nip.io --username admin --password `kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2`
+dist/argocd account update-password --insecure --account "admin" --current-password `kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2` --new-password "password"
+
+# Manual test: Create a LARGE application (helm prometheus operator)
+kubectl create namespace jgw
+dist/argocd app create jgw-prometheus --repo https://github.com/jgwest/argocd-example-apps.git --path helm-prometheus-operator --dest-server https://kubernetes.default.svc --dest-namespace jgw
+```
+
+
+
+
+
+----
+
 [![Integration tests](https://github.com/argoproj/argo-cd/workflows/Integration%20tests/badge.svg?branch=master)](https://github.com/argoproj/argo-cd/actions?query=workflow%3A%22Integration+tests%22)
 [![slack](https://img.shields.io/badge/slack-argoproj-brightgreen.svg?logo=slack)](https://argoproj.github.io/community/join-slack)
 [![codecov](https://codecov.io/gh/argoproj/argo-cd/branch/master/graph/badge.svg)](https://codecov.io/gh/argoproj/argo-cd)
