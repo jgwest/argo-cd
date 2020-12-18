@@ -40,7 +40,13 @@ cat argo-ingress.yaml | sed 's/192.168.1.220/'$IP_ADDRESS'/g' | kubectl apply -f
 # Login and change admin password to 'password'
 dist/argocd login --insecure argocd."$IP_ADDRESS".nip.io --username admin --password `kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2`
 dist/argocd account update-password --insecure --account "admin" --current-password `kubectl get pods -n argocd -l app.kubernetes.io/name=argocd-server -o name | cut -d'/' -f 2` --new-password "password"
+```
 
+### To test the custom image
+
+You can visit https://argocd.(192.168.1.220).nip.io to see the Argo CD console UI (replaced with your cluster IP address)
+
+```
 # Manual test: Create a LARGE application (helm prometheus operator)
 kubectl create namespace jgw
 dist/argocd app create jgw-prometheus --repo https://github.com/jgwest/argocd-example-apps.git --path helm-prometheus-operator --dest-server https://kubernetes.default.svc --dest-namespace jgw
