@@ -80,6 +80,18 @@ func (a *Actions) AddTag(name string) *Actions {
 	return a
 }
 
+func (a *Actions) AddTagWithForce(name string) *Actions {
+	a.context.t.Helper()
+	fixture.AddTagWithForce(name)
+	return a
+}
+
+func (a *Actions) AddAnnotatedTag(name string, message string) *Actions {
+	a.context.t.Helper()
+	fixture.AddAnnotatedTag(name, message)
+	return a
+}
+
 func (a *Actions) RemoveSubmodule() *Actions {
 	a.context.t.Helper()
 	fixture.RemoveSubmodule()
@@ -489,7 +501,7 @@ func (a *Actions) And(block func()) *Actions {
 
 func (a *Actions) Then() *Consequences {
 	a.context.t.Helper()
-	return &Consequences{a.context, a, 15}
+	return &Consequences{a.context, a, 30}
 }
 
 func (a *Actions) runCli(args ...string) {
